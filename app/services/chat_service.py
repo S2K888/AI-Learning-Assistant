@@ -1,50 +1,89 @@
-import json
 
 from fastapi import HTTPException
 from openai import OpenAI
 
 from app.core.config import settings
 
+
 SYSTEM_PROMPT = """
-你是一个专业的 Python 学习助手。
+你是一个专业、友好的 AI 智能学习助手。
 
-请根据用户的要求制定学习计划。
-必须返回标准 JSON 格式，不能添加额外解释。
+你的主要任务是帮助用户学习编程、理解技术知识、解决开发问题和制定学习计划。
 
-JSON 必须包含：
-title：计划标题
-days：学习天数
-tasks：每天的学习任务，使用列表表示
+回答要求：
+
+1. 根据用户的问题直接回答，不要强制生成学习计划。
+2. 使用清晰、自然的 Markdown 格式组织回答。
+3. 合理使用标题、加粗、列表和代码块。
+4. 涉及代码时，使用 Markdown 代码块，并标注语言。
+5. 回答尽量简洁、易懂，避免不必要的重复。
+6. 只有用户明确要求制定学习计划时，才生成学习计划。
+7. 除非用户明确要求 JSON，否则不要输出 JSON 格式。
 """
 
 
 def chat_with_ai(messages):
     if not settings.api_key:
-        raise HTTPException(status_code=500, detail="未配置 DEEPSEEK_API_KEY，请填写 .env 文件")
+        raise HTTPException(
+            status_code=500,
+            detail="未配置 DEEPSEEK_API_KEY，请填写 .env 文件"
+        )
 
-    client = OpenAI(api_key=settings.api_key, base_url=settings.base_url)
-    # 你可以把 client 理解为一个专门负责与 AI 服务通信的工具。
+    client = OpenAI(
+        api_key=settings.api_key,
+        base_url=settings.base_url
+    )
+
     try:
-        # 这是 OpenAI 兼容 SDK 的聊天补全接口。
         response = client.chat.completions.create(
-            model=settings.model,#使用哪个模型
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages],#发送给模型的消息，
-            #messages是发送给模型的消息，*messages是列表解包（会把原列表中的元素逐个展开到新列表中）。
-            max_tokens=1500,#限制模型最多生成多少token
+            model=settings.model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                *messages
+            ],
+            max_tokens=1500,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 请求失败：{str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI 请求失败：{str(e)}"
+        )
 
-    raw_reply = response.choices[0].message.content or ""#获取AI返回的内容
+    raw_reply = response.choices[0].message.content or ""
+
+    return raw_reply, raw_reply
+
+
+def chat_with_ai_stream(messages):
+    if not settings.api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="未配置 DEEPSEEK_API_KEY，请填写 .env 文件"
+        )
+
+    client = OpenAI(
+        api_key=settings.api_key,
+        base_url=settings.base_url
+    )
+
     try:
-        ai_reply = json.loads(raw_reply) #json.loads：把 JSON 字符串变成 Python 字典
-    except (json.JSONDecodeError, TypeError):
-        ai_reply = {"error": "AI 返回的内容不是合法 JSON", "raw_reply": raw_reply}
-    return ai_reply, raw_reply
-    # ai_reply	解析后的 Python 对象	方便程序读取和处理
-    # raw_reply	AI 原始回复字符串	    保留原始数据
-    # response：整个 API 响应对象。
-    # choices：模型返回的候选结果列表。
-    # [0]：取第一个候选结果。
-    # message：这个候选结果中的消息。
-    # content：消息的具体文本内容。
+        stream = client.chat.completions.create(
+            model=settings.model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                *messages
+            ],
+            max_tokens=1500,
+            stream=True,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI 请求失败：{str(e)}"
+        )
+
+    for chunk in stream:
+        content = chunk.choices[0].delta.content
+
+        if content:
+            yield content
